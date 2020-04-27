@@ -1,0 +1,16 @@
+{
+  "name": "sonos_to_mqtt",
+  "version": "1.0.0",
+  "main": "sonos_to_mqtt.js",
+  "author": "Matt Broussard <matt@mattb.io>",
+  "scripts": {
+    "start": "node sonos_to_mqtt.js"
+  },
+  "dependencies": {
+    "config": "^3.1.0",
+    "debug": "^4.1.1",
+    "lodash": "^4.17.14",
+    "mqtt": "^2.18.8",
+    "node-fetch": "^2.6.0"
+  }
+}

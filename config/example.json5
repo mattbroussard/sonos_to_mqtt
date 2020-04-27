@@ -1,0 +1,12 @@
+{
+  "mqtt": {
+    "topicPrefix": "sonos",
+    "clientId": "sonos_to_mqtt",
+    "brokerAddress": "mqtt://localhost",
+  },
+  "sonos": {
+    "appKey": "SONOS_API_APP_KEY",
+    "appSecret": "SONOS_API_APP_SECRET",
+    "refreshToken": "SONOS_API_REFRESH_TOKEN",
+  }
+}
