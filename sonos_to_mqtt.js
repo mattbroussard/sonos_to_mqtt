@@ -14,6 +14,9 @@ const sonosConfig = config.get("sonos");
 const SONOS_AUTH_SERVER = "https://api.sonos.com";
 const SONOS_API_SERVER = "https://api.ws.sonos.com";
 
+let mqttClient;
+let mqttTopics = {};
+
 function onMqttMessage(topic, message) {
   if (topic in mqttTopics) {
     const fn = mqttTopics[topic];
@@ -239,7 +242,20 @@ async function time(fn, memo) {
 
 async function main() {
   const householdId = await time(() => getSonosHouseholdID(), "get household");
-  const adjustResult = await adjustSonosGrouping(householdId, ["bedroom"]);
+
+  await connectToMQTT();
+
+  debug("Setting up MQTT listeners");
+  const { topicPrefix } = mqttConfig;
+  mqttSubscribe(`${topicPrefix}/groups/modify_playing`, async message => {
+    const request = message.toString("utf-8");
+    debug("Received group modification request:", request);
+
+    await adjustSonosGrouping(
+      householdId,
+      request.split(",").map(str => str.trim())
+    );
+  });
 }
 
 main();
