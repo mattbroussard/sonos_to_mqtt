@@ -27,7 +27,7 @@ async function mqttSubscribe(topic, fn) {
   return new Promise((resolve, reject) => {
     mqttTopics[topic] = fn;
 
-    mqttClient.subscribe(topic, (err) => {
+    mqttClient.subscribe(topic, err => {
       if (err) {
         reject(err);
       } else {
@@ -40,7 +40,7 @@ async function mqttSubscribe(topic, fn) {
 async function connectToMQTT() {
   debug("Connecting to MQTT...");
   mqttClient = mqtt.connect(mqttConfig.brokerAddress, {
-    clientId: mqttConfig.clientId,
+    clientId: mqttConfig.clientId
   });
   mqttClient.on("message", onMqttMessage);
 
@@ -66,36 +66,59 @@ async function getSonosOAuthToken_() {
     "base64"
   );
 
+  debug("Refreshing OAuth token");
   const response = await fetch(`${SONOS_AUTH_SERVER}/login/v3/oauth/access`, {
     method: "POST",
     body: new URLSearchParams({
       refresh_token: refreshToken,
-      grant_type: "refresh_token",
+      grant_type: "refresh_token"
     }),
     headers: {
-      Authorization: `Basic ${basicToken}`,
-    },
+      Authorization: `Basic ${basicToken}`
+    }
   });
   const json = await response.json();
 
+  if (!response.ok) {
+    debug(
+      `failed to refresh oauth token: ${response.status}: ${JSON.stringify(
+        json
+      )}`
+    );
+    throw new Error("failed to refresh oauth token");
+  }
+
   sonosToken = json;
   sonosToken.grantTime = Date.now();
+
+  const expiration = new Date(
+    sonosToken.grantTime + 1000 * sonosToken.expires_in
+  );
+  debug("Got new Sonos OAuth token, expires at", expiration);
+
   return sonosToken.access_token;
 }
 const getSonosOAuthToken = () =>
   time(getSonosOAuthToken_, "getSonosOAuthToken");
 
 async function getSonosHouseholdID() {
+  debug("Looking up default Sonos household ID");
   const token = await getSonosOAuthToken();
   const response = await fetch(
     `${SONOS_API_SERVER}/control/api/v1/households`,
     {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}` }
     }
   );
   const json = await response.json();
 
-  return json["households"][0]["id"];
+  const householdId = json["households"][0]["id"];
+  const numHouseholds = json["households"].length;
+  debug(
+    `Using household ID ${householdId} (${numHouseholds - 1} others available)`
+  );
+
+  return householdId;
 }
 
 async function getSonosGroupsAndPlayers(householdId) {
@@ -103,7 +126,7 @@ async function getSonosGroupsAndPlayers(householdId) {
   const response = await fetch(
     `${SONOS_API_SERVER}/control/api/v1/households/${householdId}/groups`,
     {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}` }
     }
   );
   const json = await response.json();
@@ -120,21 +143,47 @@ async function adjustSonosGrouping(householdId, playerNames) {
 
   const targetGroup = _.find(
     groups,
-    (group) => group.playbackState == "PLAYBACK_STATE_PLAYING"
+    group => group.playbackState == "PLAYBACK_STATE_PLAYING"
   );
   if (!targetGroup) {
+    debug(
+      "adjustSonosGrouping doing nothing because no currently playing group"
+    );
     return null;
   }
 
-  const targetPlayers = playerNames.map((name) =>
+  const targetPlayers = playerNames.map(name =>
     findMatchingPlayerId(players, name)
   );
+  if (!_.every(targetPlayers)) {
+    debug(
+      "adjustSonosGrouping doing nothing because some player name is invalid: ${playerNames}"
+    );
+    return null;
+  }
 
   const playerIdsToAdd = _.difference(targetPlayers, targetGroup.playerIds);
   const playerIdsToRemove = _.difference(targetGroup.playerIds, targetPlayers);
   if (playerIdsToAdd.length == 0 && playerIdsToRemove.length == 0) {
+    debug(
+      "adjustSonosGrouping doing nothing because the target group already has the requested players in it"
+    );
     return null;
   }
+
+  const playerIdToName = _.chain(players)
+    .keyBy("id")
+    .mapValues("name")
+    .value();
+  const prettyPlayerList = playerIds =>
+    `[${playerIds.map(id => playerIdToName[id]).join(", ")}]`;
+  debug(
+    `Modifying group "${targetGroup.name}": ${prettyPlayerList(
+      targetGroup.playerIds
+    )} + ${prettyPlayerList(playerIdsToAdd)} - ${prettyPlayerList(
+      playerIdsToRemove
+    )} = ${prettyPlayerList(targetPlayers)}`
+  );
 
   const token = await getSonosOAuthToken();
   const setResponse = await time(
@@ -144,25 +193,35 @@ async function adjustSonosGrouping(householdId, playerNames) {
         {
           method: "POST",
           body: JSON.stringify({
-            playerIds: targetPlayers,
+            playerIds: targetPlayers
           }),
           headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
+            "Content-Type": "application/json"
+          }
         }
       ),
     `set group (+${playerIdsToAdd.length}, -${playerIdsToRemove.length})`
   );
-
   const setResponseJson = await setResponse.json();
+
+  if (setResponse.ok) {
+    debug("successfully modified group");
+  } else {
+    debug(
+      `setGroupMembers API call returned ${
+        setResponse.status
+      }: ${JSON.stringify(setResponseJson)}`
+    );
+  }
+
   return setResponseJson;
 }
 
 function findMatchingPlayerId(players, name) {
   const result = _.find(
     players,
-    (player) => player.name.toLowerCase() == name.toLowerCase()
+    player => player.name.toLowerCase() == name.toLowerCase()
   );
 
   return result.id;
@@ -174,7 +233,7 @@ async function time(fn, memo) {
     return await fn();
   } finally {
     const end = Date.now();
-    debug(`${memo} took ${end - start}ms`);
+    debug(`Timing: ${memo} took ${end - start}ms`);
   }
 }
 
